@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Фонарик</title>
+<style>
+  :root { box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); --bg:#0b0d17; --fg:#e8ebff; --muted:#7c82a8; --accent:#ffd166; --card:#161a2c; }
+  html,body { height:100%; margin:0; }
+  body { background:radial-gradient(circle at 50% 35%, #1a1f3a, var(--bg) 70%); color:var(--fg); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:space-between; overflow:hidden; user-select:none; -webkit-tap-highlight-color:transparent; transition:background .4s; }
+  body.on { background:radial-gradient(circle at 50% 38%, #fffbe8, #ffe9a8 45%, #ffd166 100%); color:#3a2c00; --muted:#7a6a2a; --card:rgba(255,255,255,.55); }
+  header { text-align:center; padding:22px 20px 0; }
+  header h1 { margin:0; font-size:22px; letter-spacing:4px; text-transform:uppercase; font-weight:600; }
+  header p { margin:6px 0 0; color:var(--muted); font-size:14px; }
+  .center { position:relative; display:flex; align-items:center; justify-content:center; width:260px; height:260px; }
+  .ring { position:absolute; inset:0; border-radius:50%; border:2px solid rgba(255,209,102,.25); }
+  .ring.r2 { inset:-26px; border-color:rgba(255,209,102,.12); }
+  body.on .ring { border-color:rgba(255,160,0,.5); animation:pulse 2s ease-out infinite; }
+  body.on .ring.r2 { animation-delay:.6s; }
+  @keyframes pulse { 0%{transform:scale(.92);opacity:1} 100%{transform:scale(1.18);opacity:0} }
+  #power { width:190px; height:190px; border-radius:50%; border:none; cursor:pointer; background:linear-gradient(145deg,#232846,#12152a); box-shadow:0 12px 30px rgba(0,0,0,.5), inset 0 2px 4px rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; transition:all .3s; }
+  #power:active { transform:scale(.95); }
+  #power svg { width:78px; height:78px; stroke:#6b72a0; fill:none; stroke-width:5; stroke-linecap:round; transition:all .3s; }
+  body.on #power { background:linear-gradient(145deg,#fff7d6,#ffc233); box-shadow:0 0 60px 20px rgba(255,190,40,.8), 0 0 140px 50px rgba(255,220,120,.7); }
+  body.on #power svg { stroke:#7a4a00; filter:drop-shadow(0 0 6px rgba(255,255,255,.9)); }
+  .panel { width:100%; max-width:420px; box-sizing:border-box; padding:0 22px 24px; }
+  .card { background:var(--card); border-radius:22px; padding:16px 18px; backdrop-filter:blur(8px); box-shadow:0 8px 24px rgba(0,0,0,.18); }
+  .modes { display:flex; gap:8px; margin-bottom:14px; }
+  .modes button { flex:1; padding:11px 0; border:none; border-radius:14px; font-size:14px; font-weight:600; background:rgba(124,130,168,.18); color:var(--fg); cursor:pointer; transition:all .2s; }
+  .modes button.act { background:var(--accent); color:#3a2c00; box-shadow:0 4px 14px rgba(255,190,40,.5); }
+  .row { display:flex; align-items:center; gap:12px; font-size:14px; color:var(--muted); }
+  input[type=range] { flex:1; accent-color:#ffb703; height:28px; }
+  #status { text-align:center; font-size:12px; color:var(--muted); margin-top:10px; min-height:16px; }
+  #veil { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:0; }
+  header,.center,.panel { position:relative; z-index:1; }
+</style>
+</head>
+<body>
+  <div id="veil"></div>
+  <header>
+    <h1>Фонарик</h1>
+    <p id="sub">Нажми, чтобы включить</p>
+  </header>
+
+  <div class="center">
+    <div class="ring r2"></div><div class="ring"></div>
+    <button id="power" aria-label="Включить или выключить">
+      <svg viewBox="0 0 64 64"><path d="M32 8v22"/><path d="M18 17a22 22 0 1 0 28 0"/></svg>
+    </button>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <div class="modes">
+        <button data-m="steady" class="act">Свет</button>
+        <button data-m="strobe">Строб</button>
+        <button data-m="sos">SOS</button>
+      </div>
+      <div class="row">🔅<input id="br" type="range" min="20" max="100" value="100">🔆</div>
+      <div id="status"></div>
+    </div>
+  </div>
+
+<script>
+  const body = document.body, veil = document.getElementById("veil");
+  const sub = document.getElementById("sub"), status = document.getElementById("status");
+  let on = false, mode = "steady", timer = null, track = null, lit = false;
+
+  async function initTorch() {
+    if (track) return;
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      const t = s.getVideoTracks()[0];
+      if (t.getCapabilities && t.getCapabilities().torch) { track = t; status.textContent = "Вспышка камеры подключена"; }
+      else { t.stop(); status.textContent = "Вспышка недоступна, свечу экраном"; }
+    } catch (e) { status.textContent = "Свечу экраном (вспышка недоступна в браузере)"; }
+  }
+  async function setLight(v) {
+    lit = v;
+    const level = document.getElementById("br").value / 100;
+    veil.style.opacity = v ? level : 0;
+    if (track) { try { await track.applyConstraints({ advanced: [{ torch: v }] }); } catch (e) {} }
+  }
+  function stop() { clearInterval(timer); clearTimeout(timer); timer = null; }
+  const SOS = [1,1,1,0,3,3,3,0,1,1,1], U = 220;
+  function run() {
+    stop();
+    if (!on) { setLight(false); return; }
+    if (mode === "steady") { setLight(true); return; }
+    if (mode === "strobe") { let f = false; timer = setInterval(() => { f = !f; setLight(f); }, 90); return; }
+    let i = 0;
+    (function next() {
+      if (!on || mode !== "sos") return;
+      const d = SOS[i % SOS.length];
+      const pause = (i % SOS.length === SOS.length - 1);
+      if (d === 0) { setLight(false); timer = setTimeout(() => { i++; next(); }, U * 3); return; }
+      setLight(true);
+      timer = setTimeout(() => { setLight(false); timer = setTimeout(() => { i++; next(); }, pause ? U * 7 : U); }, U * d);
+    })();
+  }
+  document.getElementById("power").onclick = async () => {
+    on = !on;
+    body.classList.toggle("on", on);
+    sub.textContent = on ? "Светит ✨" : "Нажми, чтобы включить";
+    run();
+    if (on) initTorch().then(() => { if (on && lit && track) setLight(true); });
+  };
+  document.querySelectorAll(".modes button").forEach(b => b.onclick = () => {
+    document.querySelectorAll(".modes button").forEach(x => x.classList.remove("act"));
+    b.classList.add("act"); mode = b.dataset.m; if (on) run();
+  });
+  document.getElementById("br").oninput = () => { if (on && lit) veil.style.opacity = document.getElementById("br").value / 100; };
+</script>
+</body>
+</html>
